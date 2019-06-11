@@ -1,18 +1,44 @@
 module Helpers::TypeHelper
   # 處理找尋單筆資料的 batch 方法
-  def belongs_to(obj, args, ctx, fk, associate_model, pk)
+  def belongs_to(obj, args, ctx, associate_model, ids, loader)
+    detail_class_name = obj.class.name.downcase.pluralize
     model_class = associate_model.classify.constantize
-    BatchLoader.for(obj.send(fk)).batch(cache: false, default_value: model_class.new) do |ids, loader|
-      model_class.where(pk.to_sym => ids).each { |result| loader.call(result.send(pk), result) }
-    end
+
+    association_sym = detail_class_name.to_sym
+    scope = model_class.joins(association_sym)
+    scope = scope.where(detail_class_name.pluralize.to_sym => {id: ids})
+
+    scope.each { |result| loader.call(result.send(:id), result) }
   end
 
   # 處理找尋一筆或多筆資料的 batch 方法
-  def has_one_or_many(obj, args, ctx, pk, associate_model, fk)
+  def has_one_or_many(obj, args, ctx, associate_model, ids, loader)
+    master_class_name = obj.class.name.downcase
     model_class = associate_model.classify.constantize
-    BatchLoader.for(obj.send(pk)).batch(cache: false, default_value: []) do |ids, loader|
-      model_class.where(fk.to_sym => ids).page(args[:page_number]).per(args[:page_size]).each do |row_data|
-        loader.call(row_data.send(fk)) { |result| result << row_data}
+
+    unless model_class.reflect_on_association(master_class_name.to_sym).nil?
+      association_sym = master_class_name.to_sym
+    else
+      association_sym = master_class_name.pluralize.to_sym
+    end
+
+    scope = model_class.joins(association_sym)
+    scope = scope.where(master_class_name.pluralize.to_sym => {id: ids})
+
+    # 套用分頁參數
+    unless args[:page_number].nil? and args[:page_size].nil?
+      scope = scope.page(args[:page_number]).per(args[:page_size])
+    end
+
+    ids.each do |id|
+      scope.uniq.each do |row_data|
+        association = row_data.send(association_sym)
+        loader.call(id) do |result| 
+          if ( association.respond_to? :pluck and association.pluck(:id).include? id ) or 
+              ( association.respond_to? :id and association&.id == id )
+            result << row_data
+          end
+        end
       end
     end
   end
