@@ -26,12 +26,16 @@ module Helpers::ResolverHelper
   end
 
   # 建立可用的排序處理方法以及啟用 orderBy 排序條件設定
-  def apply_order_by_methods(order_by_class)
-    sorting_columns = order_by_class.values.keys
+  def self.apply_order_by_methods(order_by_class)
+    sorting_strs = order_by_class.values.keys
 
-    sorting_columns.each do |sorting_column|
-      Kernel.send(:define_method, "apply_orderBy_with_#{sorting_column.downcase}".to_sym) do |scope|
-        scope.order("#{sorting_column.humanize.downcase}")
+    sorting_strs.each do |sorting_str|
+      Kernel.send(:define_method, "apply_orderBy_with_#{sorting_str.downcase}".to_sym) do |scope|
+        sorting_str_array = sorting_str.split('_')
+        sorting_column = sorting_str_array.keep_if{|w| ['ASC', 'DESC'].exclude? w}.join('_')
+        sorting_dir = sorting_str_array.keep_if{|w| ['ASC', 'DESC'].include? w}.join
+
+        scope.order("#{sorting_column} #{sorting_dir}")
       end
     end
   end
